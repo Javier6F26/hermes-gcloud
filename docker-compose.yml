@@ -1,36 +1,29 @@
 services:
   hermes:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: hermes
+    image: nousresearch/hermes-agent:latest
+    container_name: ${CONTAINER_NAME:-hermes}
     restart: unless-stopped
     command: ["/scripts/init-hermes.sh"]
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
-      - "8642:8642"
-      - "9119:9119"
+      - "${DASHBOARD_PORT:-8642}:8642"
+      - "${API_PORT:-9119}:9119"
     volumes:
       - hermes_data:/opt/data
       - hermes_output:/output
       - ./scripts:/scripts:ro
+      - ./scripts/gcloud-setup.sh:/etc/cont-init.d/99-gcloud-setup:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${DASHBOARD_USERNAME:-admin}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${DASHBOARD_PASSWORD:-admin}
       - HERMES_OUTPUT_DIR=/output
-      # Las siguientes se interpolan desde .env (local) o variables del stack (Portainer)
-      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-}
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - TOGETHER_API_KEY=${TOGETHER_API_KEY:-}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - GIT_USER_NAME=${GIT_USER_NAME:-}
-      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
-      - SSH_PRIVATE_KEY=${SSH_PRIVATE_KEY:-}
-      - SSH_PUBLIC_KEY=${SSH_PUBLIC_KEY:-}
-      - GCLOUD_SERVICE_ACCOUNT_KEY=${GCLOUD_SERVICE_ACCOUNT_KEY:-}
 volumes:
   hermes_data:
   hermes_output:
