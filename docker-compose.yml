@@ -3,7 +3,7 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: ${CONTAINER_NAME:-hermes}
     restart: unless-stopped
-    command: ["/scripts/init-hermes.sh"]
+    command: gateway run
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -13,7 +13,6 @@ services:
     volumes:
       - hermes_data:/opt/data
       - hermes_output:/output
-      - ./scripts:/scripts:ro
       - ./scripts/gcloud-setup.sh:/etc/cont-init.d/99-gcloud-setup:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
