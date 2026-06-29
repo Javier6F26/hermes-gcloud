@@ -14,27 +14,18 @@ mkdir -p "$SANDBOX_DIR/gcloud-config" \
 echo "[init-hermes] Directorios creados en $SANDBOX_DIR"
 
 # ──────────────────────────────────────────────
-# 1. config.yaml — Hermes terminal backend
+# 1. config.yaml — Hermes terminal backend + dashboard
 # ──────────────────────────────────────────────
+NEEDS_REWRITE=false
 if [ ! -f "$CONFIG_FILE" ]; then
-    cat > "$CONFIG_FILE" << 'YAMLEOF'
-terminal:
-  backend: docker
-  docker_image: "hermes-gcloud:latest"
-  docker_volumes:
-    - "/opt/data/sandbox/gcloud-config:/root/.config/gcloud"
-    - "/opt/data/sandbox/ssh:/root/.ssh"
-    - "/opt/data/sandbox/gitconfig:/root/.gitconfig"
-    - "/opt/data/sandbox/projects:/workspace/projects"
-  docker_persist_across_processes: true
-  container_persistent: true
-  timeout: 180
-YAMLEOF
-    echo "[init-hermes] config.yaml creado"
+    NEEDS_REWRITE=true
 elif ! grep -q "docker_volumes" "$CONFIG_FILE" 2>/dev/null; then
     cp "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date +%s)"
-    cat >> "$CONFIG_FILE" << 'YAMLEOF'
+    NEEDS_REWRITE=true
+fi
 
+if [ "$NEEDS_REWRITE" = true ]; then
+    cat > "$CONFIG_FILE" << YAMLEOF
 terminal:
   backend: docker
   docker_image: "hermes-gcloud:latest"
@@ -47,7 +38,37 @@ terminal:
   container_persistent: true
   timeout: 180
 YAMLEOF
-    echo "[init-hermes] config.yaml actualizado con docker_volumes"
+
+    # Dashboard auth — solo si el usuario puso DASHBOARD_USERNAME/PASSWORD
+    if [ -n "$DASHBOARD_USERNAME" ] && [ -n "$DASHBOARD_PASSWORD" ]; then
+        PASSWORD_HASH=$(python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('${DASHBOARD_PASSWORD}'))" 2>/dev/null || echo "")
+        if [ -n "$PASSWORD_HASH" ]; then
+            cat >> "$CONFIG_FILE" << YAMLEOF
+
+dashboard:
+  basic_auth:
+    username: "$DASHBOARD_USERNAME"
+    password_hash: "$PASSWORD_HASH"
+YAMLEOF
+            echo "[init-hermes] Dashboard auth configurado: $DASHBOARD_USERNAME"
+        else
+            echo "[init-hermes] ⚠️  No se pudo generar password hash para dashboard — bindeando a 127.0.0.1"
+            cat >> "$CONFIG_FILE" << YAMLEOF
+
+dashboard:
+  bind: "127.0.0.1:8642"
+YAMLEOF
+        fi
+    else
+        # Sin credenciales — bind a loopback para evitar el error público
+        cat >> "$CONFIG_FILE" << YAMLEOF
+
+dashboard:
+  bind: "127.0.0.1:8642"
+YAMLEOF
+        echo "[init-hermes] Dashboard bindeado a 127.0.0.1 (sin auth — accede vía SSH/tunnel)"
+    fi
+    echo "[init-hermes] config.yaml escrito"
 else
     echo "[init-hermes] config.yaml ya configurado"
 fi
@@ -55,8 +76,6 @@ fi
 # ──────────────────────────────────────────────
 # 2. .env — API keys desde variables de entorno
 # ──────────────────────────────────────────────
-# Si no existe /opt/data/.env, lo creamos a partir
-# de las variables que docker-compose inyectó desde .env
 if [ ! -f "$ENV_FILE" ]; then
     : > "$ENV_FILE"
     echo "# Auto-generado por init-hermes.sh" >> "$ENV_FILE"
@@ -109,7 +128,6 @@ if [ -n "$SSH_PRIVATE_KEY" ] && [ ! -f "$SANDBOX_DIR/ssh/id_ed25519" ]; then
     fi
     echo "[init-hermes] SSH private key instalada en sandbox"
 elif [ ! -f "$SANDBOX_DIR/ssh/id_ed25519" ]; then
-    # Sin clave provista — generamos una (sirve para GitHub sin auth)
     ssh-keygen -t ed25519 -f "$SANDBOX_DIR/ssh/id_ed25519" -N "" -C "hermes-sandbox" 2>/dev/null || true
     if [ -f "$SANDBOX_DIR/ssh/id_ed25519" ]; then
         echo "[init-hermes] SSH key generada automáticamente para sandbox"
@@ -135,17 +153,18 @@ echo "╔═══════════════════════�
 echo "║  ✅  init-hermes completado                                 ║"
 echo "║"
 echo "║  📁 Sandbox:  $SANDBOX_DIR"
-echo "║  🔑 .env:     $([ -f "$ENV_FILE" ] && echo '✓ creado' || echo '✗ pendiente (edita .env del host y reinicia)')"
+echo "║  🔑 .env:     $([ -f "$ENV_FILE" ] && echo '✓ creado' || echo '✗ pendiente')"
 echo "║  🔐 SSH:      $([ -f "$SANDBOX_DIR/ssh/id_ed25519" ] && echo '✓ instalada' || echo '✗ pendiente')"
-echo "║  🐙 Git:      $([ -f "$GITCONF_FILE" ] && echo '✓ configurado' || echo '· opcional (usa GIT_USER_NAME/EMAIL)')"
-echo "║  ☁️  GCP:      $([ -f "$SANDBOX_DIR/gcloud-config/key.json" ] && echo '✓ service account' || echo '· opcional (usa GCLOUD_SERVICE_ACCOUNT_KEY o gcloud auth login manual)')"
+echo "║  🐙 Git:      $([ -f "$GITCONF_FILE" ] && echo '✓ configurado' || echo '· opcional')"
+echo "║  ☁️  GCP:      $([ -f "$SANDBOX_DIR/gcloud-config/key.json" ] && echo '✓ service account' || echo '· opcional')"
+echo "║  🖥️  Dashboard: $([ -n "$DASHBOARD_USERNAME" ] && echo "✓ auth ($DASHBOARD_USERNAME)" || echo '127.0.0.1 (usa tunnel)')"
 echo "║"
-echo "║  Para hacer gcloud auth login MANUAL (sin service account):"
-echo "║    docker exec -it hermes compose up    (primero up)"
+echo "║  Para gcloud auth login INTERACTIVO (si no usas service account):"
 echo "║    docker exec -it hermes bash"
 echo "║    gcloud auth login"
 echo "║    exit"
-echo "║    docker compose restart"
+echo "║    gcloud auth application-default login   # opcional, para ADC"
+echo "║    exit"
 echo "╚══════════════════════════════════════════════════════════════╝"
 
 exec /opt/hermes/.venv/bin/hermes gateway run
