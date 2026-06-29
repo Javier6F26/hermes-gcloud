@@ -4,24 +4,18 @@ services:
     container_name: ${CONTAINER_NAME:-hermes}
     restart: unless-stopped
     command: gateway run
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     ports:
       - "${DASHBOARD_PORT:-8642}:8642"
       - "${API_PORT:-9119}:9119"
     volumes:
       - hermes_data:/opt/data
       - hermes_output:/output
-      - ./scripts/gcloud-setup.sh:/etc/cont-init.d/99-gcloud-setup:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - HERMES_DASHBOARD=1
-      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${DASHBOARD_USERNAME:-admin}
-      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${DASHBOARD_PASSWORD:-admin}
+      - HERMES_DASHBOARD_INSECURE=1
       - HERMES_OUTPUT_DIR=/output
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
 volumes:
   hermes_data:
